@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: gateway-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 16
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # acks=all: the write is not acknowledged until every in-sync replica has it. A message the user saw
+      # accepted must survive a broker loss, which is the one place in this pipeline worth paying latency for.
+      acks: all
+      retries: 10
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        # Batching is what makes 70k messages a second affordable. 5ms of linger costs nothing a human can
+        # perceive and lets the producer send far fewer, far larger requests.
+        linger.ms: 5
+        compression.type: lz4
+        delivery.timeout.ms: 30000
+        request.timeout.ms: 5000
+
+server:
+  port: ${PORT:8081}
+  # Enough headroom for the handshake burst when a region fails over and everyone reconnects at once.
+  tomcat:
+    threads:
+      max: 200
+    max-connections: 60000
+    accept-count: 2000
+
+chat:
+  gateway:
+    node-id: ${NODE_ID:gw-local}
+    presence-ttl: 30s
+    heartbeat-interval: 10s
+    max-frame-bytes: 65536
+    send-timeout: 5s
+    send-rate-limit-per-second: 20
+    jwt-secret: ${JWT_SECRET:local-dev-secret-change-me}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      node: ${NODE_ID:gw-local}
+
+logging:
+  level:
+    dev.dwij.chat: ${LOG_LEVEL:INFO}

@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat gateway console</title>
+<style>
+  :root {
+    --paper: #fbfaf7;
+    --ink: #16202b;
+    --ink-soft: #5b6b7a;
+    --rule: #dcd9d1;
+    --inbound: #0f6e63;
+    --outbound: #8a5a00;
+    --alert: #a4302a;
+    --panel: #ffffff;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  header {
+    padding: 28px 32px 20px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  header p {
+    margin: 6px 0 0;
+    color: var(--ink-soft);
+    max-width: 62ch;
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .client {
+    background: var(--panel);
+    padding: 20px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    min-height: 420px;
+  }
+
+  .client-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .client-head h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .state {
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .state[data-live="true"] { color: var(--inbound); }
+  .state[data-live="false"] { color: var(--alert); }
+
+  .thread {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 12px;
+    background: #fdfdfc;
+    min-height: 220px;
+  }
+
+  .bubble {
+    margin-bottom: 10px;
+    padding-left: 10px;
+    border-left: 2px solid var(--rule);
+  }
+
+  .bubble.mine { border-left-color: var(--outbound); }
+  .bubble.theirs { border-left-color: var(--inbound); }
+
+  .bubble .who {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .bubble .seq {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+
+  form {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  input[type="text"] {
+    flex: 1;
+    padding: 9px 11px;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    font: inherit;
+    background: #fff;
+    color: var(--ink);
+  }
+
+  input[type="text"]:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--inbound);
+    outline-offset: 1px;
+  }
+
+  button {
+    padding: 9px 16px;
+    border: 1px solid var(--ink);
+    border-radius: 3px;
+    background: var(--ink);
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  button.secondary {
+    background: transparent;
+    color: var(--ink);
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .wire {
+    padding: 18px 32px 40px;
+  }
+
+  .wire h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+
+  .wire-log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: #fff;
+    padding: 10px 12px;
+  }
+
+  .wire-log div { white-space: pre-wrap; word-break: break-all; }
+  .wire-log .out { color: var(--outbound); }
+  .wire-log .in { color: var(--inbound); }
+  .wire-log .err { color: var(--alert); }
+
+  .empty { color: var(--ink-soft); font-size: 13px; }
+
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Chat gateway console</h1>
+  <p>Two clients, two sockets, one conversation. Send from either side and watch the message take the full
+     path: gateway to Kafka, stored and sequenced, fanned back out, delivered. Close a socket and send
+     again to see the push fallback appear in the notification-service log.</p>
+</header>
+
+<main>
+  <section class="client" data-user="alice">
+    <div class="client-head">
+      <h2>alice</h2>
+      <span class="state" data-live="false">disconnected</span>
+      <button class="secondary toggle" type="button">Connect</button>
+    </div>
+    <div class="thread"><p class="empty">Nothing yet.</p></div>
+    <form>
+      <input type="text" placeholder="Message as alice" autocomplete="off" disabled>
+      <button type="submit" disabled>Send</button>
+    </form>
+  </section>
+
+  <section class="client" data-user="bob">
+    <div class="client-head">
+      <h2>bob</h2>
+      <span class="state" data-live="false">disconnected</span>
+      <button class="secondary toggle" type="button">Connect</button>
+    </div>
+    <div class="thread"><p class="empty">Nothing yet.</p></div>
+    <form>
+      <input type="text" placeholder="Message as bob" autocomplete="off" disabled>
+      <button type="submit" disabled>Send</button>
+    </form>
+  </section>
+</main>
+
+<section class="wire">
+  <h2>Frames on the wire</h2>
+  <div class="wire-log" id="wire"><div class="empty">Connect a client to start.</div></div>
+</section>
+
+<script>
+const CONVERSATION = 'dm:alice:bob';
+const wire = document.getElementById('wire');
+
+function log(direction, user, text) {
+  if (wire.querySelector('.empty')) wire.textContent = '';
+  const line = document.createElement('div');
+  line.className = direction;
+  const arrow = direction === 'out' ? '-->' : direction === 'in' ? '<--' : '!!!';
+  line.textContent = new Date().toLocaleTimeString() + '  ' + user.padEnd(6) + ' ' + arrow + ' ' + text;
+  wire.appendChild(line);
+  wire.scrollTop = wire.scrollHeight;
+}
+
+class Client {
+  constructor(section) {
+    this.user = section.dataset.user;
+    this.section = section;
+    this.state = section.querySelector('.state');
+    this.thread = section.querySelector('.thread');
+    this.input = section.querySelector('input');
+    this.sendButton = section.querySelector('form button');
+    this.toggle = section.querySelector('.toggle');
+    this.socket = null;
+    this.heartbeat = null;
+
+    this.toggle.addEventListener('click', () => this.socket ? this.disconnect() : this.connect());
+    section.querySelector('form').addEventListener('submit', event => {
+      event.preventDefault();
+      this.send(this.input.value.trim());
+    });
+  }
+
+  async connect() {
+    this.toggle.disabled = true;
+    try {
+      const response = await fetch('/dev/token?userId=' + this.user);
+      if (!response.ok) throw new Error('token endpoint returned ' + response.status);
+      const { token } = await response.json();
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      this.socket = new WebSocket(protocol + '://' + location.host + '/ws?token=' + token + '&deviceId=console');
+
+      this.socket.onopen = () => {
+        this.setLive(true);
+        // Mirrors what a real client does: prove liveness often enough that the 30s presence key
+        // never lapses while the socket is healthy.
+        this.heartbeat = setInterval(() => this.raw({ type: 'heartbeat' }), 10000);
+      };
+      this.socket.onmessage = event => this.receive(JSON.parse(event.data));
+      this.socket.onclose = () => this.cleanup();
+      this.socket.onerror = () => log('err', this.user, 'socket error');
+    } catch (error) {
+      log('err', this.user, String(error.message || error));
+      this.cleanup();
+    } finally {
+      this.toggle.disabled = false;
+    }
+  }
+
+  disconnect() {
+    if (this.socket) this.socket.close();
+  }
+
+  cleanup() {
+    clearInterval(this.heartbeat);
+    this.socket = null;
+    this.setLive(false);
+  }
+
+  setLive(live) {
+    this.state.dataset.live = String(live);
+    this.state.textContent = live ? 'connected' : 'disconnected';
+    this.toggle.textContent = live ? 'Disconnect' : 'Connect';
+    this.input.disabled = !live;
+    this.sendButton.disabled = !live;
+  }
+
+  raw(frame) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    this.socket.send(JSON.stringify(frame));
+    if (frame.type !== 'heartbeat') log('out', this.user, JSON.stringify(frame));
+  }
+
+  send(body) {
+    if (!body) return;
+    this.raw({
+      type: 'send',
+      // Generated client-side so a resend after a dropped connection is deduplicated rather than doubled.
+      messageId: crypto.randomUUID(),
+      conversationId: CONVERSATION,
+      body,
+      sentAt: Date.now()
+    });
+    this.input.value = '';
+  }
+
+  receive(frame) {
+    if (frame.type === 'pong') return;
+    log('in', this.user, JSON.stringify(frame));
+    if (frame.type === 'message') this.append(frame.message);
+    if (frame.type === 'error') log('err', this.user, frame.detail);
+  }
+
+  append(message) {
+    const empty = this.thread.querySelector('.empty');
+    if (empty) empty.remove();
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble ' + (message.senderId === this.user ? 'mine' : 'theirs');
+    bubble.innerHTML =
+      '<span class="who"></span> <span class="seq"></span><br><span class="body"></span>';
+    bubble.querySelector('.who').textContent = message.senderId;
+    bubble.querySelector('.seq').textContent = '#' + message.serverSeq;
+    bubble.querySelector('.body').textContent = message.body;
+    this.thread.appendChild(bubble);
+    this.thread.scrollTop = this.thread.scrollHeight;
+  }
+}
+
+document.querySelectorAll('.client').forEach(section => new Client(section));
+</script>
+</body>
+</html>

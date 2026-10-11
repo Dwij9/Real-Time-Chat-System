@@ -1,0 +1,114 @@
+# Everything needed to run the whole system on one machine: Kafka, Redis, two gateway nodes, and one of
+# each backend service. Two gateways are deliberate — with a single node you never exercise the routing
+# that makes the design work, because every recipient happens to be local.
+
+services:
+  redis:
+    image: redis:7-alpine
+    # Eviction policy matters: the cache and presence share this instance locally, and when it fills, the
+    # least recently used keys should go rather than writes starting to fail.
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.7.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: chat-local-cluster-0001
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  message-service:
+    build:
+      context: .
+      args:
+        MODULE: message-service
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:19092
+      CHAT_STORE: memory
+    ports:
+      - "8082:8082"
+
+  notification-service:
+    build:
+      context: .
+      args:
+        MODULE: notification-service
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:19092
+      PUSH_PROVIDER: log
+    ports:
+      - "8083:8083"
+
+  gateway-1:
+    build:
+      context: .
+      args:
+        MODULE: gateway-service
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:19092
+      NODE_ID: gw-1
+    ports:
+      - "8081:8081"
+
+  gateway-2:
+    build:
+      context: .
+      args:
+        MODULE: gateway-service
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:19092
+      NODE_ID: gw-2
+    ports:
+      - "8091:8081"

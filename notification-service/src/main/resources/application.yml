@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: notification-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: notification-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      max-poll-records: 500
+    listener:
+      ack-mode: manual_immediate
+      type: single
+
+server:
+  port: ${PORT:8083}
+
+chat:
+  notification:
+    # log | apns | fcm. The logging sender makes the offline path observable without provider credentials.
+    push-provider: ${PUSH_PROVIDER:log}
+    consumer-concurrency: ${CONSUMER_CONCURRENCY:6}
+    push-preview-length: 120
+    include-preview-in-push: true
+    apns-bundle-id: com.example.chat
+    fcm-project-id: example-chat
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+logging:
+  level:
+    dev.dwij.chat: ${LOG_LEVEL:INFO}

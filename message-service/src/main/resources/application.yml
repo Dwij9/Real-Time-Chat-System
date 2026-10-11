@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: message-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: message-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Start at the beginning for a brand new group so a freshly provisioned consumer replays rather than
+      # skipping whatever is already on the topic.
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 500
+      properties:
+        max.poll.interval.ms: 300000
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        linger.ms: 5
+        compression.type: lz4
+    listener:
+      # Offsets are committed by hand, after the message is durably stored. Anything automatic risks
+      # acknowledging a message that was never written.
+      ack-mode: manual_immediate
+      type: single
+
+server:
+  port: ${PORT:8082}
+
+chat:
+  # memory | cosmos. Local runs use memory so the system is demonstrable without an Azure account.
+  store: ${CHAT_STORE:memory}
+  message:
+    recent-cache-size: 50
+    recent-cache-ttl: 24h
+    idempotency-ttl: 24h
+    max-group-size: 250
+    max-body-length: 8000
+    consumer-concurrency: ${CONSUMER_CONCURRENCY:3}
+    jwt-secret: ${JWT_SECRET:local-dev-secret-change-me}
+  cosmos:
+    endpoint: ${COSMOS_ENDPOINT:}
+    key: ${COSMOS_KEY:}
+    database: chat
+    message-container: messages
+    conversation-container: conversations
+    # Read locally, fail over in order. The client re-resolves these without a restart.
+    preferred-regions: ${COSMOS_REGIONS:East US,West US 2}
+    multiple-write-regions: true
+    retention-days: ${COSMOS_RETENTION_DAYS:0}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+logging:
+  level:
+    dev.dwij.chat: ${LOG_LEVEL:INFO}
